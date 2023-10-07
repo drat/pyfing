@@ -1,2 +1,2 @@
 # pyfing
-Open source fingerprint recognition in Python
+Fingerprint recognition in Python
