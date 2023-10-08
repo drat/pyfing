@@ -1,0 +1,1 @@
+{"window_size": 9, "percentile": 95, "threshold": 0.14, "closing_count": 6, "opening_count": 0}
