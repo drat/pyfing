@@ -10,11 +10,12 @@ class DnnSegmentationParameters(SegmentationParameters):
     Parameters of the DNN segmentation algorithm.    
     """
     
-    def __init__(self, model: tf.keras.Model, dnn_input_dpi = 500, image_dpi = 500):
-        self.model = model
-        self.dnn_input_size = model.layers[0].input_shape[0][1:3]
+    def __init__(self, model_name = "segmentation_512.keras", dnn_input_dpi = 500, dnn_input_size = (512, 512), image_dpi = 500, threshold = 0.5):
+        self.model_name = model_name        
+        self.dnn_input_size = dnn_input_size
         self.dnn_input_dpi = dnn_input_dpi
         self.image_dpi = image_dpi
+        self.threshold = threshold
 
 
 class DnnSegmentationAlgorithm(SegmentationAlgorithm):
@@ -22,23 +23,30 @@ class DnnSegmentationAlgorithm(SegmentationAlgorithm):
     TODO
     """
 
-    def __init__(self, parameters: DnnSegmentationParameters | tf.keras.Model):
-        if isinstance(parameters, tf.keras.Model):
-            parameters = DnnSegmentationParameters(parameters)
+    def __init__(self, parameters = DnnSegmentationParameters(), models_folder = "./models/"):
         super().__init__(parameters)
+        self.parameters = parameters
+        self.models_folder = models_folder
+        self.load_model()
+
+    def load_model(self):
+        """
+        Loads the keras model parameters.model_name.
+        """
+        self.model = tf.keras.models.load_model(self.models_folder + self.parameters.model_name)
 
     def run(self, image: Image, intermediate_results = None) -> Image:
         h, w = image.shape
         ir = self._adjust_input(image)
         if intermediate_results is not None: intermediate_results.append((np.copy(ir), 'Adjusted input'))
-        val_preds = self.parameters.model.predict(ir[np.newaxis,...,np.newaxis],verbose = 0)
+        val_preds = self.model.predict(ir[np.newaxis,...,np.newaxis],verbose = 0)
         if intermediate_results is not None: intermediate_results.append((np.copy(val_preds[0].squeeze()), 'Net output'))
-        mask = np.where(val_preds[0].squeeze()<0.5, 0, 255).astype(np.uint8) # [0..1] ==> 0,255
-        return self._adjust_output(mask, (w, h)) # TODO ??? .squeeze()
+        mask = np.where(val_preds[0].squeeze()<self.parameters.threshold, 0, 255).astype(np.uint8) # [0..1] ==> 0,255
+        return self._adjust_output(mask, (w, h))
 
     def run_on_db(self, images: [Image]) -> [Image]:
         ar = np.array([self._adjust_input(image)[...,np.newaxis] for image in images])
-        masks = np.where(self.parameters.model.predict(ar, verbose = 0)<0.5,0,255).astype(np.uint8) # [0..1] ==> 0,255
+        masks = np.where(self.model.predict(ar, verbose = 0)<self.parameters.threshold,0,255).astype(np.uint8) # [0..1] ==> 0,255
         return [self._adjust_output(mask.squeeze(), image.shape[::-1]) for mask,image in zip(masks, images)]
 
     def _adjust_input(self, image):

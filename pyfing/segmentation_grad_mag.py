@@ -25,7 +25,7 @@ class GradMagSegmentationAlgorithm(SegmentationAlgorithm):
     TODO
     """
 
-    def __init__(self, parameters: GradMagSegmentationParameters = GradMagSegmentationParameters()):
+    def __init__(self, parameters = GradMagSegmentationParameters()):
         super().__init__(parameters)
     
     def run(self, image: Image, intermediate_results = None) -> Image:

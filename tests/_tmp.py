@@ -7,15 +7,31 @@ import cv2 as cv
 import tensorflow as tf
 
 import sys
-sys.path.append(".") # To import packages from this project
+sys.path.append(".") # To import the pyfing package from this project
 import pyfing as pf
 from pyfing.segmentation import compute_segmentation_error, compute_dice_coefficient
-from common.fvc_segmentation_utils import load_db, load_gt
+
 
 PATH_FVC = '../datasets/'
 PATH_GT = '../datasets/segmentationbenchmark/groundtruth/'
 PATH_PARAMS = './parameters/segmentation/'
 PATH_RES = '../results/'
+
+
+_fvc_db_non_500_dpi = {(2002,2): 569, (2004,3): 512} # FVC datasets with non-standard DPI
+
+
+def load_db(year, db, subset):
+    i1, i2 = (1, 100) if subset=="a" else (101, 110)
+    j1, j2 = 1, 8
+    return [cv.imread(f'{PATH_FVC}fvc{year}/db{db}_{subset}/{i}_{j}.png', cv.IMREAD_GRAYSCALE)
+            for i in range(i1, i2+1) for j in range(j1, j2+1)]
+
+def load_gt(year, db, subset):
+    i1, i2 = (1, 100) if subset=="a" else (101, 110)
+    j1, j2 = 1, 8
+    return [cv.bitwise_not(cv.imread(f'{PATH_GT}/fvc{year}_db{db}_im_{i}_{j}seg.png', 
+                                       cv.IMREAD_GRAYSCALE)) for i in range(i1, i2+1) for j in range(j1, j2+1)]
 
 def compute_metrics(masks, gt):
     results = [(k / 8 + 1, (k % 8) + 1, (compute_segmentation_error(m, x), compute_dice_coefficient(m, x))) for k, (m, x) in enumerate(zip(masks, gt))]
@@ -24,13 +40,12 @@ def compute_metrics(masks, gt):
     return errors, dice_coeffs, results
 
 def run_test(alg: pf.SegmentationAlgorithm, year, db, subset):
-    # load dataset-specific parameters
     if isinstance(alg, pf.GradMagSegmentationAlgorithm):
-        alg.parameters = pf.GradMagSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_grad_mag_params.json') 
+        alg.parameters = pf.GradMagSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_grad_mag_params.txt') # load dataset-specific parameters
     else:
-        alg.parameters = pf.DnnSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_dnn_params.json')
-    images = load_db(PATH_FVC, year, db, subset)
-    gt = load_gt(PATH_GT, year, db, subset)
+        alg.parameters.image_dpi = _fvc_db_non_500_dpi.get((year, db), 500) # The only parmameter that changes is the image DPI
+    images = load_db(year, db, subset)
+    gt = load_gt(year, db, subset)
     start = time.time()
     masks = alg.run_on_db(images)
     elapsed = time.time() - start
@@ -50,12 +65,10 @@ def run_test(alg: pf.SegmentationAlgorithm, year, db, subset):
 
 TEST_DATASETS = [(y, db, "a") for y in (2000, 2002, 2004) for db in (1,2,3,4)]
 
-algs = [
-    #pf.GradMagSegmentationAlgorithm(), 
-    pf.DnnSegmentationAlgorithm(),
-]
+alg = pf.DnnSegmentationAlgorithm(tf.keras.models.load_model('./models/segmentation512x512.keras'))
 
-for alg in algs:
-    print('Testing...')
+for t in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
+    print(f'Testing... {t}')
+    alg.parameters.threshold = t
     avg_err, avg_dices = np.mean(np.array([run_test(alg, y, db, subset) for y, db, subset in TEST_DATASETS]), 0)
     print(f'Avg: {avg_err:.2f}% {avg_dices:.3f}')

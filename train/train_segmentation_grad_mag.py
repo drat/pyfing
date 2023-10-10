@@ -1,33 +1,19 @@
-##### Script find best parameters for GradMagSegmentationAlgorithm on FVC datasets B #####
+##### Script to optimize the parameters of GradMagSegmentationAlgorithm on FVC datasets B #####
 
-import time
-import json
 import numpy as np
 import cv2 as cv
 import tensorflow as tf
 
 import sys
-sys.path.append(".") # To import the pyfing package from this project
+sys.path.append(".") # To import packages from this project
 import pyfing as pf
 from pyfing.segmentation import compute_segmentation_error, compute_dice_coefficient
+from common.fvc_segmentation_utils import load_db, load_gt
 
 
 PATH_FVC = '../datasets/'
 PATH_GT = '../datasets/segmentationbenchmark/groundtruth/'
 PATH_RES = '../results/'
-
-
-def load_db(year, db, subset):
-    i1, i2 = (1, 100) if subset=="a" else (101, 110)
-    j1, j2 = 1, 8
-    return [cv.imread(f'{PATH_FVC}fvc{year}/db{db}_{subset}/{i}_{j}.png', cv.IMREAD_GRAYSCALE)
-            for i in range(i1, i2+1) for j in range(j1, j2+1)]
-
-def load_gt(year, db, subset):
-    i1, i2 = (1, 100) if subset=="a" else (101, 110)
-    j1, j2 = 1, 8
-    return [cv.bitwise_not(cv.imread(f'{PATH_GT}/fvc{year}_db{db}_im_{i}_{j}seg.png', 
-                                       cv.IMREAD_GRAYSCALE)) for i in range(i1, i2+1) for j in range(j1, j2+1)]
 
 def average_err_on_db(images, gt, parameters):    
     alg = pf.GradMagSegmentationAlgorithm(parameters)
@@ -48,17 +34,17 @@ def optimize_parameters_in_ranges(year, db, subset, images, gt, best_parameters,
                             min_err = e
                             best_parameters = parameters
                             # saves best parameters to file
-                            best_parameters.save(f'{PATH_RES}fvc{year}_db{db}_b_grad_mag_params.txt')
+                            best_parameters.save(f'{PATH_RES}fvc{year}_db{db}_b_grad_mag_params.json')
                         print(f'{year}-{db}-{subset}: {len(images)} fingerprints')
                         print(f'{parameters}\n-> {e:.2f}%\n(best: {best_parameters}\n-> {min_err:.2f}%)')
     return best_parameters
 
 def optimize_parameters(year, db, subset):
-    images = load_db(year, db, subset)
-    gt = load_gt(year, db, subset)
+    images = load_db(PATH_FVC, year, db, subset)
+    gt = load_gt(PATH_GT, year, db, subset)
     p = None
     try:
-        p = pf.GradMagSegmentationParameters.load(f'{PATH_RES}fvc{year}_db{db}_b_grad_mag_params.txt')
+        p = pf.GradMagSegmentationParameters.load(f'{PATH_RES}fvc{year}_db{db}_b_grad_mag_params.json')
         print(f'Loaded best parameters: {p}')
     except:
         print('Best parameters not found')
