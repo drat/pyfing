@@ -18,7 +18,8 @@ PATH_RES = '../results/'
 ##
 
 print("Threshold optimization...")
-alg = pf.DnnSegmentationAlgorithm()
+#alg = pf.DnnSegmentationAlgorithm()
+alg = pf.DnnSegmentationAlgorithm(pf.DnnSegmentationParameters(model_name="s_256.keras", dnn_input_dpi=250, dnn_input_size=(256, 256)), models_folder=PATH_RES)
 TRAIN_DATASETS = [(y, db, "b") for y in (2000, 2002, 2004) for db in (1,2,3,4)]
 for y, db, subset in TRAIN_DATASETS:
     images = load_db(PATH_FVC, y, db, subset)
@@ -35,5 +36,5 @@ for y, db, subset in TRAIN_DATASETS:
             best_err = err
         print(f"{y} {db}: t = {alg.parameters.threshold} -> {err} (best = {best_err} @ {best_t})")
     alg.parameters.threshold = best_t
-    alg.parameters.save(PATH_RES + f"fvc{y}_db{db}_b_dnn_params.json")
+    alg.parameters.save(PATH_RES + f"fvc{y}_db{db}_b_dnn_256_params.json")
 

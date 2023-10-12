@@ -26,9 +26,12 @@ def compute_metrics(masks, gt):
 def run_test(alg: pf.SegmentationAlgorithm, year, db, subset):
     # load dataset-specific parameters
     if isinstance(alg, pf.GradMagSegmentationAlgorithm):
-        alg.parameters = pf.GradMagSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_grad_mag_params.json') 
+        alg.parameters = pf.GradMagSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_grad_mag_params.txt')
     else:
         alg.parameters = pf.DnnSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_dnn_params.json')
+        #alg.parameters = pf.DnnSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_dnn_256_params.json')
+        alg.parameters.threshold = 0.5
+        #pass # TODO
     images = load_db(PATH_FVC, year, db, subset)
     gt = load_gt(PATH_GT, year, db, subset)
     start = time.time()
@@ -51,8 +54,8 @@ def run_test(alg: pf.SegmentationAlgorithm, year, db, subset):
 TEST_DATASETS = [(y, db, "a") for y in (2000, 2002, 2004) for db in (1,2,3,4)]
 
 algs = [
-    #pf.GradMagSegmentationAlgorithm(), 
-    pf.DnnSegmentationAlgorithm(),
+    pf.GradMagSegmentationAlgorithm(), 
+    #pf.DnnSegmentationAlgorithm(),
 ]
 
 for alg in algs:

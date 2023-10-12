@@ -27,7 +27,8 @@ class DnnSegmentationAlgorithm(SegmentationAlgorithm):
         super().__init__(parameters)
         self.parameters = parameters
         self.models_folder = models_folder
-        self.load_model()
+        if self.parameters.model_name != "":
+            self.load_model()
 
     def load_model(self):
         """
@@ -74,14 +75,11 @@ def _adjust_size(image, target_size, border_value):
     right = target_w - w - left
     top = (target_h - h) // 2
     bottom = target_h - h - top
-
     if left < 0 or right < 0: # Horizontal crop
-        image = image[:, -left:right]
+        image = image[:, -left:(right if right < 0 else w)]
     if top < 0 or bottom < 0: # Vertical crop
-        image = image[-top:bottom]
-    
+        image = image[-top:(bottom if bottom < 0 else h)]    
     if left > 0 or right > 0 or top > 0 or bottom > 0: # Add borders
         image = cv.copyMakeBorder(image, max(0,top), max(0,bottom), max(0,left), max(0,right), cv.BORDER_CONSTANT, value = border_value)
-
     return image
 
