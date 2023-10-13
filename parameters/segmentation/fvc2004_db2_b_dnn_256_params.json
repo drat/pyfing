@@ -1,0 +1,1 @@
+{"model_name": "s_256.keras", "dnn_input_size": [256, 256], "dnn_input_dpi": 250, "image_dpi": 500, "threshold": 0.4}

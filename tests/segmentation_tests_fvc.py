@@ -29,6 +29,9 @@ def run_test(alg: pf.SegmentationAlgorithm, year, db, subset):
         alg.parameters = pf.GradMagSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_grad_mag_params.json') 
     else:
         alg.parameters = pf.DnnSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_dnn_params.json')
+        #alg.parameters = pf.DnnSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_dnn_256_params.json')
+        alg.parameters.threshold = 0.5
+        #pass # TODO
     images = load_db(PATH_FVC, year, db, subset)
     gt = load_gt(PATH_GT, year, db, subset)
     start = time.time()

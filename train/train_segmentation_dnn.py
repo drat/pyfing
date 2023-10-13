@@ -20,11 +20,11 @@ INPUT_IMAGE_SIZE = (512, 512)
 INPUT_IMAGE_DPI = 500
 FILTERS = [16, 32, 64, 128, 256, 512]
 BUFFER_SIZE = 1000
-TRAIN_STEPS = 50 #3000
+TRAIN_STEPS = 3000
 BATCH_SIZE = 16
-MIN_EPOCHS = 1 #31
-MAX_EPOCHS = 300
-PATIENCE = 3 #11
+MIN_EPOCHS = 51
+MAX_EPOCHS = 500
+PATIENCE = 21
 
 AUGMENT_PROB = 0.5
 AUGMENT_PROB_TRASLATION = 0.15
@@ -32,8 +32,8 @@ AUGMENT_PROB_ROTATION = 0.15
 AUGMENT_PROB_CONTRAST = 0.15
 AUGMENT_PROB_FLIP = 0.15
 AUGMENT_PROB_ZOOM = 0.15
-AUGMENT_MAX_TRASLATION = 0.1
-AUGMENT_MAX_ROTATION = 0.05
+AUGMENT_MAX_TRASLATION = 0.2 #0.1
+AUGMENT_MAX_ROTATION = 0.07 #0.05
 AUGMENT_MAX_CONTRAST = 0.6
 AUGMENT_MAX_ZOOM = 0.1
 
@@ -84,9 +84,9 @@ def _adjust_size(image, target_size, border_value):
     top = (target_h - h) // 2
     bottom = target_h - h - top
     if left < 0 or right < 0: # Horizontal crop
-        image = image[:, -left:right]
+        image = image[:, -left:(right if right < 0 else w)]
     if top < 0 or bottom < 0: # Vertical crop
-        image = image[-top:bottom]    
+        image = image[-top:(bottom if bottom < 0 else h)]    
     if left > 0 or right > 0 or top > 0 or bottom > 0: # Add borders
         image = cv.copyMakeBorder(image, max(0,top), max(0,bottom), max(0,left), max(0,right), cv.BORDER_CONSTANT, value = border_value)
     return image    
@@ -123,7 +123,6 @@ def load_fvc_dataset(db_years, db_numbers, db_set, impression_from, impression_t
                     if img is None:
                         raise Exception(f"Cannot load {img_path}")
                     img = _adjust_input(img, dpi)
-                    #img = _adjust_input(img, dpi).numpy().squeeze()
                     gt_path = f'{PATH_GT}/fvc{year}_db{n}_im_{i}_{j}seg.png'
                     gt = cv.imread(gt_path, cv.IMREAD_GRAYSCALE)
                     gt = 255 - gt # FVC ground truth is 0 for foreground and 255 for background: we want 255 for foreground and 0 for background
@@ -168,25 +167,66 @@ def dice_loss(y_true, y_pred):
     loss = 1 - smooth_dice_coeff(y_true, y_pred)
     return loss
 
-## 
 
-print("Loading datasets...")
-train_ds = load_fvc_dataset([2000,2002,2004], [1,2,3,4], "b", 1, 7)
-train_ds = train_ds.cache().shuffle(BUFFER_SIZE).repeat().map(FvcImageAugmentation()).batch(BATCH_SIZE).prefetch(buffer_size=tf.data.AUTOTUNE)
-val_ds = load_fvc_dataset([2000,2002,2004], [1,2,3,4], "b", 8, 8)
-val_ds = val_ds.batch(BATCH_SIZE)
+def train_model(model_name):
+    print("Loading datasets...")
+    train_ds = load_fvc_dataset([2000,2002,2004], [1,2,3,4], "b", 1, 7)
+    train_ds = train_ds.cache().shuffle(BUFFER_SIZE).repeat().map(FvcImageAugmentation()).batch(BATCH_SIZE).prefetch(buffer_size=tf.data.AUTOTUNE)
+    val_ds = load_fvc_dataset([2000,2002,2004], [1,2,3,4], "b", 8, 8)
+    val_ds = val_ds.batch(BATCH_SIZE)
 
-print("Preparing model...")
-model = get_model(FILTERS)
-model.summary()
-model.compile(optimizer="adam", loss="binary_crossentropy", metrics=[dice_loss])
+    print("Preparing model...")
+    model = get_model(FILTERS)
+    model.summary()
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=[dice_loss])
 
-print("Training...")
-callbacks = [
-    # TODO provare a fare monitor di val_loss in modo da togliere la metrica custom
-    tf.keras.callbacks.EarlyStopping(monitor='val_dice_loss', patience=PATIENCE, restore_best_weights=True, start_from_epoch=MIN_EPOCHS, min_delta=0.0002, verbose = 1), # 7, 5
-]
-model.fit(train_ds, epochs=MAX_EPOCHS, steps_per_epoch=TRAIN_STEPS, validation_data=val_ds, callbacks=callbacks)
+    print("Training...")
+    callbacks = [
+        # TODO provare a fare monitor di val_loss in modo da togliere la metrica custom, oppure provare binary_accuracy
+        tf.keras.callbacks.EarlyStopping(monitor='val_dice_loss', patience=PATIENCE, restore_best_weights=True, start_from_epoch=MIN_EPOCHS, min_delta=0.0002, verbose = 1), # 7, 5
+    ]
+    model.fit(train_ds, epochs=MAX_EPOCHS, steps_per_epoch=TRAIN_STEPS, validation_data=val_ds, callbacks=callbacks)
 
-model.save(PATH_RES+'model.h5')
-tf.keras.models.load_model(PATH_RES+'model.h5').save(PATH_RES+'model.keras')
+    print("Saving model...")
+    model.save(PATH_RES+f'{model_name}.h5', include_optimizer=False)
+    tf.keras.models.load_model(PATH_RES+f'{model_name}.h5').save(PATH_RES+f'{model_name}.keras')
+    return model
+
+def error_on_db(alg, images, gts, dpi):
+    alg.parameters.image_dpi = dpi
+    errors = [compute_segmentation_error(mask, gt) for mask, gt in zip(alg.run_on_db(images), gts)]
+    return sum(errors) / len(errors)
+##
+
+print("Loading test dbs...")
+TEST_DATASETS = [(y, db, "a") for y in (2000, 2002, 2004) for db in (1,2,3,4)]
+test_dbs = [(load_db(PATH_FVC, year, db, subset), load_gt(PATH_GT, year, db, subset), fvc_db_non_500_dpi.get((year, db), 500)) for year, db, subset in TEST_DATASETS]
+
+alg = pf.DnnSegmentationAlgorithm(pf.DnnSegmentationParameters(model_name=""), models_folder=PATH_RES)
+for INPUT_IMAGE_SIZE, INPUT_IMAGE_DPI, FILTERS, model_name in [
+    ((64, 64), 72, [16, 32, 64], "s_64"),
+    ((128, 128), 125, [16, 32, 64, 128], "s_128"),
+    ((256, 256), 250, [16, 32, 64, 128, 256], "s_256"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_1"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_2"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_3"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_4"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_5"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_6"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_7"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_8"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_9"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_10"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_11"),
+    ((512, 512), 500, [16, 32, 64, 128, 256, 512], "s_512_12"),
+]:    
+    alg.model = train_model(model_name)
+    alg.parameters.dnn_input_dpi = INPUT_IMAGE_DPI
+    alg.parameters.dnn_input_size = INPUT_IMAGE_SIZE
+    errors = [error_on_db(alg, images, gts, dpi) for images, gts, dpi in test_dbs]
+    err = sum(errors) / len(errors)
+    resultLine = f"{model_name} -> {err:.2f}%"
+    with open(f'{PATH_RES}results.txt', 'a') as f:
+        print(resultLine, file=f)                
+    print(resultLine)
