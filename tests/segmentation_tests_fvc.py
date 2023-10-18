@@ -3,14 +3,12 @@
 import time
 import json
 import numpy as np
-import cv2 as cv
-import tensorflow as tf
 
 import sys
 sys.path.append(".") # To import packages from this project
 import pyfing as pf
 from pyfing.segmentation import compute_segmentation_error, compute_dice_coefficient
-from common.fvc_segmentation_utils import load_db, load_gt
+from common.fvc_segmentation_utils import load_db, load_gt, fvc_db_non_500_dpi
 
 PATH_FVC = '../datasets/'
 PATH_GT = '../datasets/segmentationbenchmark/groundtruth/'
@@ -18,20 +16,14 @@ PATH_PARAMS = './parameters/segmentation/'
 PATH_RES = '../results/'
 
 def compute_metrics(masks, gt):
-    results = [(k / 8 + 1, (k % 8) + 1, (compute_segmentation_error(m, x), compute_dice_coefficient(m, x))) for k, (m, x) in enumerate(zip(masks, gt))]
+    results = [(k // 8 + 1, (k % 8) + 1, (compute_segmentation_error(m, x), compute_dice_coefficient(m, x))) for k, (m, x) in enumerate(zip(masks, gt))]
     errors = np.array([e for _, _, (e, d) in results])
     dice_coeffs = np.array([d for _, _, (e, d) in results])
     return errors, dice_coeffs, results
 
 def run_test(alg: pf.SegmentationAlgorithm, year, db, subset):
-    # load dataset-specific parameters
-    if isinstance(alg, pf.GradMagSegmentationAlgorithm):
-        alg.parameters = pf.GradMagSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_grad_mag_params.txt')
-    else:
-        alg.parameters = pf.DnnSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_dnn_params.json')
-        #alg.parameters = pf.DnnSegmentationParameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_dnn_256_params.json')
-        alg.parameters.threshold = 0.5
-        #pass # TODO
+    # load algorithm- and dataset-specific parameters
+    alg.parameters = alg.parameters.load(f'{PATH_PARAMS}fvc{year}_db{db}_b_{type(alg).__name__}_params.json')    
     images = load_db(PATH_FVC, year, db, subset)
     gt = load_gt(PATH_GT, year, db, subset)
     start = time.time()
@@ -52,6 +44,7 @@ def run_test(alg: pf.SegmentationAlgorithm, year, db, subset):
 ## 
 
 TEST_DATASETS = [(y, db, "a") for y in (2000, 2002, 2004) for db in (1,2,3,4)]
+#TEST_DATASETS = [(2002, 4, "a")]
 
 algs = [
     pf.GradMagSegmentationAlgorithm(), 
